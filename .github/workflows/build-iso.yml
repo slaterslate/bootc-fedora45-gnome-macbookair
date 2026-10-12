@@ -1,0 +1,81 @@
+name: Build Fedora ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      fedora_version:
+        description: "Fedora version (e.g. 45)"
+        required: true
+        default: "45"
+      image_name:
+        description: "Local bootc image name"
+        required: true
+        default: "fedora-macbook-air"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "Containerfile"
+      - "packages.rpm"
+      - "config.toml"
+      - ".github/workflows/build-iso.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+
+      - name: Install podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Set build variables
+        id: vars
+        run: |
+          FEDORA_VERSION="${{ github.event.inputs.fedora_version || '45' }}"
+          IMAGE_NAME="${{ github.event.inputs.image_name || 'fedora-macbook-air' }}"
+          echo "fedora_version=${FEDORA_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build bootc container image
+        run: |
+          sudo podman build \
+            --build-arg FEDORA_VERSION=${{ steps.vars.outputs.fedora_version }} \
+            -t localhost/${{ steps.vars.outputs.image_name }}:latest \
+            -f Containerfile .
+
+      - name: Build Anaconda ISO
+        run: |
+          mkdir -p output
+          sudo podman run --rm --privileged --pull=newer \
+            -v ./output:/output \
+            -v ./config.toml:/config.toml:ro \
+            -v /var/lib/containers/storage:/var/lib/containers/storage \
+            quay.io/centos-bootc/bootc-image-builder:latest \
+            --type anaconda-iso \
+            --rootfs btrfs \
+            localhost/${{ steps.vars.outputs.image_name }}:latest
+
+      - name: Upload ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: fedora-${{ steps.vars.outputs.fedora_version }}-macbook-air-iso
+          path: output/bootiso/install.iso
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
