@@ -8,7 +8,7 @@
 # Build Broadcom WiFi (akmod-wl) and FaceTimeHD camera (akmod-facetimehd)
 # in an isolated builder so build-only deps don't pollute the final image.
 ARG BASE_IMAGE=quay.io/fedora/fedora-bootc
-ARG FEDORA_VERSION=44
+ARG FEDORA_VERSION=45
 
 FROM ${BASE_IMAGE}:${FEDORA_VERSION} AS builder
 
